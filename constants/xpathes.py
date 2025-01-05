@@ -1,0 +1,9 @@
+# login xpath | id
+
+USERNAME_FIELD_ID = "F80351"
+PASSWORD_FIELD_ID = "F80401"
+CAPTCHA_FIELD_ID = "F51701"
+CAPTCHA_IMAGE_ID = "imgCaptcha"
+LOGIN_BTN_ID = "btnLog"
+
+
