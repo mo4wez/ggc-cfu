@@ -7,6 +7,7 @@ from core.logger import get_logger
 from time import sleep
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
+from bs4 import BeautifulSoup
 
 
 class CheckGradesState(BaseState):
@@ -39,37 +40,83 @@ class CheckGradesState(BaseState):
         with open(self.notified_grades_file, 'w', encoding='utf-8') as file:
             json.dump(self.notified_grades, file, ensure_ascii=False, indent=4)
 
+    # def _find_term_grades(self):
+    #     """Extract grades from the table."""
+    #     self.logger.info("Extracting grades from the table.")
+    #     result = {}
+    #     try:
+    #         grades_table = self.driver.find_element(By.XPATH, """.//table[@id="T02"]""")
+    #         grades_table_body = grades_table.find_element(By.XPATH, """.//tbody""")
+    #         grades_rows = grades_table_body.find_elements(By.XPATH, """.//tr[@class="TableDataRow"]""")
+
+    #         for row in grades_rows:
+    #             course_name = row.find_element(By.XPATH, """.//td[4]""").get_attribute("title")
+    #             grade_element = row.find_element(By.XPATH, """.//td[7]""")
+    #             course_grade = grade_element.find_element(By.XPATH, """.//nobr[1]""").text.strip()
+    #             grade_status_element = row.find_element(By.XPATH, """.//td[9]""")
+    #             grade_status = grade_status_element.find_element(By.XPATH, """.//nobr[1]""").text.strip()
+
+    #             try:
+    #                 numeric_grade = float(course_grade)
+    #                 result[course_name] = numeric_grade
+    #             except ValueError:
+    #                 # Handle non-numeric grades
+    #                 self.logger.error("Value error in getting grade.")
+
+    #                 if grade_status == "غيبت كلاسي":
+    #                     result[course_name] = "غيبت كلاسي"
+
+    #             sleep(0.3)
+
+    #     except NoSuchElementException:
+    #         self.logger.error("Grade table not found.")
+    #     return result
+
+
     def _find_term_grades(self):
-        """Extract grades from the table."""
-        self.logger.info("Extracting grades from the table.")
+        """Extract grades from the table using BeautifulSoup."""
+        self.logger.info("Extracting grades from the table using BeautifulSoup.")
         result = {}
         try:
-            grades_table = self.driver.find_element(By.XPATH, """.//table[@id="T02"]""")
-            grades_table_body = grades_table.find_element(By.XPATH, """.//tbody""")
-            grades_rows = grades_table_body.find_elements(By.XPATH, """.//tr[@class="TableDataRow"]""")
-
+            # Get the page source from Selenium's driver
+            page_source = self.driver.page_source
+            
+            # Parse the page source with BeautifulSoup
+            soup = BeautifulSoup(page_source, 'html.parser')
+            
+            # Locate the grades table
+            grades_table = soup.find("table", {"id": "T02"})
+            if not grades_table:
+                self.logger.error("Grade table not found.")
+                return result
+            
+            # Locate table rows
+            grades_rows = grades_table.find("tbody").find_all("tr", {"class": "TableDataRow"})
+            
             for row in grades_rows:
-                course_name = row.find_element(By.XPATH, """.//td[4]""").get_attribute("title")
-                grade_element = row.find_element(By.XPATH, """.//td[7]""")
-                course_grade = grade_element.find_element(By.XPATH, """.//nobr[1]""").text.strip()
-                grade_status_element = row.find_element(By.XPATH, """.//td[9]""")
-                grade_status = grade_status_element.find_element(By.XPATH, """.//nobr[1]""").text.strip()
-
+                # Extract course name
+                course_name = row.select_one("td:nth-child(4)").get("title", "").strip()
+                
+                # Extract course grade
+                grade_element = row.select_one("td:nth-child(7) nobr")
+                course_grade = grade_element.text.strip() if grade_element else None
+                
+                # Extract grade status
+                grade_status_element = row.select_one("td:nth-child(9) nobr")
+                grade_status = grade_status_element.text.strip() if grade_status_element else None
+                
                 try:
                     numeric_grade = float(course_grade)
                     result[course_name] = numeric_grade
                 except ValueError:
-                    # Handle non-numeric grades
-                    self.logger.error("Value error in getting grade.")
-
+                    self.logger.error(f"Value error in grade conversion for course: {course_name}")
                     if grade_status == "غيبت كلاسي":
                         result[course_name] = "غيبت كلاسي"
 
-                sleep(0.3)
-
-        except NoSuchElementException:
-            self.logger.error("Grade table not found.")
+        except Exception as e:
+            self.logger.error(f"An error occurred while parsing grades: {e}")
         return result
+
 
     def monitor_grades(self):
         """Monitor grades periodically by checking the current page and refreshing it."""
@@ -121,4 +168,4 @@ class CheckGradesState(BaseState):
     def _send_telegram_notification(self, course_name, course_grade):
         """Send notification via Telegram (stub)."""
         self.logger.info("Sending grades to telegram...")
-        self.telegram_bot.send_message(f'نمره درس "{course_name}"  فرو شد 💦💋')
+        self.telegram_bot.send_message(f""""{course_name}" نمره رو زد: {course_grade}""")
